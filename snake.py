@@ -14,7 +14,8 @@ class Snake:
         self.dim = dim
         self.headPos = np.array([int(dim / 2), int(dim/2)])
         self.dir = 0 #random.randint(0,3)
-        self.board = np.zeros((dim, dim))
+        self.board = np.zeros((dim, dim),  dtype=float)
+        self.numSteps = 0
         self.gameOver = False
 
         #   place head
@@ -134,6 +135,8 @@ class Snake:
 
         #   place new head
         self.board[nextHeadPos[1]][nextHeadPos[0]] = self.length
+
+        self.numSteps += 1
 
 keyActions = {
     "d": 0,
