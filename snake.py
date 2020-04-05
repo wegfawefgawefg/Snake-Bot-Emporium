@@ -151,7 +151,7 @@ def playGame():
 
         while not game.gameOver:
             clear()
-            print(game.drawBoard())
+            game.drawBoard()
             for key in keyActions:
                 if keyboard.is_pressed(key):
                     game.setDir(keyActions[key])
