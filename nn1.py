@@ -11,146 +11,197 @@ and we are not making it predict how much reward it will get
 and it has no tryhard percentage really
 '''
 
+'''
+it would be nice if the punishment was somehow attached to a specific input
+like you could make it associate the punishment with the input instead of it just being some
+    arbitrary punishment coming from the ether at the end of the game
+    -ideas for this are seeding it with a specific game output? on the unsupervised game state predictor board?
+'''
+
+'''
+could try passing in recommended inputs, 
+and then slowly cutting those out to make it less dependant
+why would this work?
+    it should associate inputs with specific environments
+'''
+
+'''
+TODONT:
+'''
+
+'''
+TODO:
+    stop punishing weights into oblivion
+        try always giving a set amount of reinforcement per turn. like energy
+            what doesnt go to one action gets divided amongst the rest?
+
+    spawn 4 new games per turn to "see" the future?
+
+    reward portions
+'''
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.autograd import Variable
 
+import os
+import time
+import random
 import numpy as np
 from tqdm import tqdm
+
 import snake as s
-from torch.autograd import Variable
-import random
+import architectures as arcs
 
-class Net(nn.Module):
-    def __init__(self, inputSize, hiddenSize, outputSize):
-        super().__init__()
-        self.inputSize = inputSize
-        self.hiddenSize = hiddenSize
-        self.outputSize = outputSize
-        self.l1 = nn.Linear(inputSize, hiddenSize)
-        self.l2 = nn.Linear(hiddenSize, hiddenSize)
-        self.l8 = nn.Linear(hiddenSize, outputSize)
+clear = lambda: os.system('cls')
 
-    def forward(self, x):
-        x = F.leaky_relu( self.l1(x) )
-        x = F.leaky_relu( self.l2(x) )
-        x = self.l8(x)
-        return x
+#   high fucking score
+# def getRewardThisStep(game):
+#     reward = -1.0
+#     if game.ateAppleThisStep:
+#         reward += 1.0
+#     if game.visitedNewThisStep:
+#         reward += 4.0
+#     else:
+#         reward -= 4.0
 
-def scoreGameEnd(game):
-    return game.numSteps + game.length
+#     return reward
 
-def train(net, criterion, optimizer, gameSize, epochs):
+def getRewardThisStep(game):
+    reward = -1.0
+    if game.ateAppleThisStep:
+        reward += 4.0
+    if game.visitedNewThisStep:
+        reward += 4.0
+    else:
+        reward -= 4.0
+
+    return reward
+
+def encodeGame(game):
+    snake = np.where(game.board > 0, True, False)
+    apples = np.where(game.board < 0, True, False)
+
+    snakeBoard = game.board.copy()
+    snakeBoard[apples] = 0
+    snakeBoard /= game.length
+
+    appleBoard = game.board.copy()
+    appleBoard[snake] = 0
+    appleBoard[apples] *= -1
+
+    #   add current direction
+    direction = torch.tensor([0, 0, 0, 0], dtype=torch.float32)
+    direction[game.dir] = 1
+
+    oneHot = np.concatenate([snakeBoard.flatten(), appleBoard.flatten(), direction])
+    oneHot = torch.tensor(oneHot, dtype=torch.float32).view(1, 1, game.dim * game.dim * 2 + 4)
+
+    return oneHot
+
+def train(net, criterion, optimizer, gameSize, epochs, watch=True):
     net.train()
 
-    for i in tqdm(range(epochs)):
+    topReward = 0
+    longestSnake = 0
+    longestGame = 0
+    mostNewVisited = 0
+
+    game = s.Snake(gameSize)
+    maxNumSteps = game.area * 4
+
+    if watch:
+        pbar = range(epochs)
+    else:
+        pbar = tqdm(range(epochs))
+    for i in pbar:
+        gameDescription = "Game %s, Records: Reward %s, Snake Length %s, Steps %s, New Visits %s" % (i, str(topReward)[:4], longestSnake, longestGame, mostNewVisited)
+        if not watch:
+            pbar.set_description(gameDescription)
         optimizer.zero_grad()
 
         game = s.Snake(gameSize)
-
-        gameDuration = 0
-
-        moves = []
-        outputs = []
-        while not game.gameOver:
-
-            #   generate a move
-            #   #   lol should we be regularizing the board?
-            oneHot = torch.tensor(game.board, dtype=torch.float32).view(1, 1, gameSize * gameSize)
-            output = net(oneHot)
-
-            values, index = output.max(0)
-
-            print(index)
-            quit()
-            game.setDir(index)
-                        
-            #   store for later
-            moves.append(move)
-            outputs.append(output)
-        
-        #   get end score of game
-        score = scoreEndBoard(board, winner, computersPlayer)
-        # gameDurationMultiplier = 1.0 - gameDuration / 10
-        # gameDurationMultiplier = gameDurationMultiplier * 0.9
-        dilutionFactor = 0.9
-        totalDilutant = 1.0
-        for i, move in reversed(list(enumerate(moves))):
-            totalDilutant *= dilutionFactor
-            output = outputs[i]
-            target = output.clone().view(9)
-            target[move] = score * totalDilutant
-            target = target.view(1, 1, 9)
+        maxStepsExceeded = False
+        while not game.gameOver and not maxStepsExceeded:
 
             optimizer.zero_grad()
+
+            if watch:
+                clear()
+                game.drawBoard()
+                print(gameDescription)
+                time.sleep(0.07)
+
+            #   generate a move
+            oneHot = encodeGame(game)
+            output = net(oneHot)
+            # print(output)
+
+            _, index = output.view(4).max(0)
+            move = index
+
+            game.setDir(move)
+
+            reward = getRewardThisStep(game)
+
+            target = torch.tensor([1, 1, 1, 1], dtype=torch.float32)    #   incentivise all other moves
+            # target = torch.tensor([0, 0, 0, 0], dtype=torch.float32)    #   incentivises no other moves
+            # target = output.clone().view(4)                             #   incentivises only target move
+            target[move] += reward
+            target = target.view(1, 1, 4)
+            
             loss = criterion(output, target)
-            loss.backward()
+            loss.backward(retain_graph=True)
             optimizer.step()
 
-def test(net, epochs):
-    net.eval()
+            game.step()
 
-    numWins = 0
-    numLosses = 0
-    numTies = 0
+            # if game.numSteps > maxNumSteps:
+            #     maxStepsExceeded = True
 
-    for i in tqdm(range(epochs)):
-        player = 2
-        computersPlayer = random.randint(1,2)
+        if game.length == game.area:    #   beat the game
+            # target = torch.tensor([1, 1, 1, 1], dtype=torch.float32)    #   incentivise all other moves
+            target = torch.tensor([0, 0, 0, 0], dtype=torch.float32)    #   incentivises no other moves
+            # target = output.clone().view(4)                             #   incentivises only target move            target[move] += 1
+            target = target.view(1, 1, 4)
+        else:   #   died pathetically
+            target = torch.tensor([1, 1, 1, 1], dtype=torch.float32)    #   incentivise all other moves
+            # target = torch.tensor([0, 0, 0, 0], dtype=torch.float32)    #   incentivises no other moves
+            # target = output.clone().view(4)                             #   incentivises only target move
+            target[move] += -30   #   PLAYS REALLY WELL
+            # target[move] += -20   #   BEST DEATH PENALTY
+            # target[move] += -10
+            target = target.view(1, 1, 4)
 
-        board = np.zeros(shape = (3, 3))
-        # board = np.random.randint(low = 0, high = 3, size = (3, 3))
-
-        movesLeft = np.any(np.where(board == 0, 1, 0))
-        winner = tt.getWinner(board)
-
-        while(not winner and movesLeft):
-            if player == computersPlayer:
-                #   generate a move
-                oneHot = oneHotTicTacToe(board, computersPlayer).view(1, 1, 18)
-                output = net(oneHot)
-
-                #   mask out invalid moves
-                invalidMoves = np.where( board.flatten() > 0, True, False)
-                maskedOutput = output.clone().view(9)
-                maskedOutput[invalidMoves] = -10
-                values, index = maskedOutput.max(0)
-
-                #   apply the move
-                move = index
-                board = board.flatten()
-                board[move] = computersPlayer
-                board = board.reshape(3, 3)
-                        
-            else:   #   opponents turn
-                empties = tt.listEmpties(board)
-                randomMove = random.choice(empties)
-                tt.applyMove(player, randomMove, board)
-            player = tt.togglePlayer(player)
-
-            movesLeft = np.any(np.where(board == 0, 1, 0))
-            winner = tt.getWinner(board)
+        loss = criterion(output, target)
+        loss.backward()
+        optimizer.step()
         
-        if winner == computersPlayer:
-            numWins += 1
-        elif winner == tt.togglePlayer(computersPlayer):
-            numLosses += 1
-        else:   #   winner == False
-            numTies += 1
+        if reward > topReward:
+            topReward = reward
+        if game.length > longestSnake:
+            longestSnake = game.length
+        if game.numSteps > longestGame:
+            longestGame = game.numSteps
+        if game.numNewVisited > mostNewVisited:
+            mostNewVisited = game.numNewVisited
 
-    return numWins, numLosses, numTies
-
+    return False
 
 def main():
-    boardSize = 8
+    boardSize = 5
+    oneHotShape = boardSize * boardSize * 2 + 4
 
-    net = Net(boardSize * boardSize, 64, 4)
-    # net = Net(18, 256, 9)
+    net = arcs.Net(oneHotShape, 64, 4)
+    # net = arcs.BigNet(oneHotShape, 64, 4)
     criterion = nn.MSELoss(reduction='sum')
-    optimizer = optim.Adam(net.parameters(), lr=0.001)
+    optimizer = optim.Adam(net.parameters(), lr=0.001)    #   BEST OPTIM
+    # optimizer = optim.Adam(net.parameters(), lr=0.01)
 
-    train(net=net, criterion=criterion, optimizer=optimizer, gameSize=boardSize, epochs=10000)
+    train(net=net, criterion=criterion, optimizer=optimizer, gameSize=boardSize, epochs=10000, watch=False)
+    train(net=net, criterion=criterion, optimizer=optimizer, gameSize=boardSize, epochs=10000, watch=True)
     # numWins, numLosses, numTies = test(net=net, epochs=1000)
     # print("wins, losses, ties:")
     # print(numWins)

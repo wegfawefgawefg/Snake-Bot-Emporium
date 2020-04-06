@@ -13,10 +13,22 @@ class Snake:
         self.length = 1
         self.dim = dim
         self.headPos = np.array([int(dim / 2), int(dim/2)])
-        self.dir = 0 #random.randint(0,3)
+        self.dir = random.randint(0,3)
         self.board = np.zeros((dim, dim),  dtype=float)
         self.numSteps = 0
         self.gameOver = False
+        self.visited = np.zeros((dim, dim),  dtype=float)
+        self.resetVisited()
+        self.area = dim * dim
+        self.stepsSinceLastApple = 0
+        self.numNewVisited = 0
+
+        #   step info
+        #   #   gets reset every single step
+        self.lastStepDir = self.dir
+        self.dirChangedThisStep = False
+        self.visitedNewThisStep = False
+        self.ateAppleThisStep = False
 
         #   place head
         self.board[self.headPos[1]][self.headPos[0]] = self.length
@@ -24,6 +36,15 @@ class Snake:
         #   place an apple
         nextHeadPos = self.getHeadNextPos()
         self.board[nextHeadPos[1]][nextHeadPos[0]] = -1
+
+    def resetStepInfo(self):
+        self.lastStepDir = self.dir
+        self.dirChangedThisStep = False
+        self.visitedNewThisStep = False
+        self.ateAppleThisStep = False
+
+    def resetVisited(self):
+        self.visited = self.visited * 0.0
 
     def getHeadNextPos(self):
         if self.dir == 0:
@@ -53,9 +74,11 @@ class Snake:
         head = " ▲ "
         apple = " ● "
         blank = " □ "
+        visitedSpace = " ▣ "
         for y in range(0, self.dim):
             for x in range(0, self.dim):
                 val = self.board[y][x]
+                visited = self.visited[y][x]
                 if val == self.length:
                     print(Fore.GREEN + head, end='')
                     # print(Fore.GREEN + str(val), end='')
@@ -66,24 +89,28 @@ class Snake:
                     print(Fore.RED + apple, end='')
                     # print(Fore.RED + str(val), end='')
                 else:
-                    print(Fore.WHITE + blank, end='')
+                    if visited == 1:
+                        print(Fore.WHITE + visitedSpace, end='')
+                    else:
+                        print(Fore.WHITE + blank, end='')
             print()
-                
 
     def setDir(self, newDir):
-        if newDir == 0 and (self.dir == 3 or self.dir == 1):
-            self.dir = newDir
-        elif newDir == 1 and (self.dir == 2 or self.dir == 0):
-            self.dir = newDir
-        elif newDir == 2 and (self.dir == 3 or self.dir == 1):
-            self.dir = newDir
-        elif newDir == 3 and (self.dir == 0 or self.dir == 2):
-            self.dir = newDir
-        
+        if not newDir == self.dir:
+            if newDir == 0 and (self.dir == 3 or self.dir == 1):
+                self.dir = newDir
+            elif newDir == 1 and (self.dir == 2 or self.dir == 0):
+                self.dir = newDir
+            elif newDir == 2 and (self.dir == 3 or self.dir == 1):
+                self.dir = newDir
+            elif newDir == 3 and (self.dir == 0 or self.dir == 2):
+                self.dir = newDir
 
     def step(self):
         if self.gameOver:
             return False
+
+        self.resetStepInfo()
 
         nextHeadPos = self.getHeadNextPos()
 
@@ -121,8 +148,26 @@ class Snake:
             self.board[maxPos] = -1
             self.board = self.board.reshape(self.dim, self.dim)
 
+            self.resetVisited()
+            self.stepsSinceLastApple = 0
+            self.ateAppleThisStep = True
+        else:
+            self.stepsSinceLastApple += 1
+
         #   place the new head
         self.headPos = nextHeadPos
+        
+        #   update step info: VISITED
+        if self.visited[nextHeadPos[1]][nextHeadPos[0]] == 0:
+            self.visitedNewThisStep = True
+            self.numNewVisited += 1
+
+        #   update visited
+        self.visited[nextHeadPos[1]][nextHeadPos[0]] = 1.0
+
+        #   update step info: LAST DIR
+        if not self.dir == self.lastStepDir:
+            self.dirChangedThisStep = True
 
         #   subtract 1 from all board positions
         self.board = self.board - 1
