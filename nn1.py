@@ -26,6 +26,16 @@ why would this work?
 '''
 
 '''
+one network that is used for everything would be good
+how to prevent one use of a giant network from using all the trained models?
+some sort of modell lookup??
+some way of only computing neurons or features that seem most active and ignoring the rest?
+and then using the other neurons and cycling features out if success isnt happening quickly enough? impatience
+a heirarchy for identifying if learning is going well or deleting past useful features?
+    that would have to be learned by switching often and avoiding losing performance
+'''
+
+'''
 TODONT:
 '''
 
