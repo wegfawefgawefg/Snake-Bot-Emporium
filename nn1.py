@@ -38,6 +38,9 @@ TODO:
     spawn 4 new games per turn to "see" the future?
 
     reward portions
+
+    should the agent create its own reward functions?
+        -is this why you make it estimate its reward to convert modeling reward into unsupervised?
 '''
 
 import torch
